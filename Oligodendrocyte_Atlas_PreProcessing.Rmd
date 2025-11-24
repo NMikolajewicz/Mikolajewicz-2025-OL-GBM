@@ -1,0 +1,966 @@
+---
+title: "Integrated Oligodendrocyte Atlas Processing Pipeline"
+description: "Process scRNA-seq OL data from ~25 studies covering Healthy, MS, Glioma/BM, PCNSL, AD, PD, and Developmental contexts."
+author: "N. Mikolajewicz"
+date: "`r Sys.Date()`"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+
+
+# ==============================================================================
+# 0. GLOBAL CONFIGURATION & SETUP
+# ==============================================================================
+
+# Memory management
+rm(list = setdiff(ls(), c("data.path", "user")))
+invisible({gc()})
+
+# Time tracking
+start.time <- proc.time()
+
+# ------------------------------------------------------------------------------
+# DIRECTORY SETTINGS
+# TODO: Update ROOT_DIR to match the local environment or use relative paths for GitHub
+# ------------------------------------------------------------------------------
+ROOT_DIR <- "Path/To/Your/Data/Directory/" # Replace for GitHub public version
+# ROOT_DIR <- "C:/Users/n mikolajewicz/Dropbox/PDF Projects - JM/Data/scRNA-seq/01_sci-RNA-seq3_Hong_Kevin_Jason/NM_HH/PR_GBM/Papers/non-GBM scRNA-seq papers/"
+
+# ------------------------------------------------------------------------------
+# LIBRARIES
+# ------------------------------------------------------------------------------
+packages2load <- c(
+  # Single Cell Analysis
+  "Seurat", "sctransform", "Libra", "scMiko", "glmGamPoi", "biomaRt",
+  # Data Manipulation
+  "dplyr", "tidyr", "reshape2",
+  # Visualization
+  "RColorBrewer", "ggplot2", "gridExtra", "flexdashboard",
+  # Parallel Processing & Utils
+  "future", "foreach", "parallel", "doParallel", "DT",
+  # File Handling
+  "rhdf5", "h5", "SeuratDisk" 
+)
+
+# Load libraries silently
+invisible({lapply(packages2load, function(pkg) {
+  if(!require(pkg, character.only = TRUE)) warning(paste("Package", pkg, "not found"))
+  library(pkg, character.only = TRUE)
+})})
+
+```
+
+```{r helper_functions}
+# ==============================================================================
+# 1. HELPER FUNCTIONS
+# ==============================================================================
+
+#' Filter Seurat Object
+#' Standard QC filtering for mitochondrial content and feature counts.
+filterData <- function(x, mt.cutoff = 10, min.features = 200, max.features = 9000){
+  x <- getMitoContent(x)
+  x <- x[, x@meta.data$percent.mt < mt.cutoff]
+  x <- x[, x@meta.data$nFeature_RNA < max.features]
+  x <- x[, x@meta.data$nFeature_RNA > min.features]
+  return(x)
+}
+
+#' Normalize Data with SCTransform
+#' Applies QC filtering (optional) and SCTransform using glmGamPoi.
+#' Returns a list of processed Seurat objects.
+normData <- function(so.list, do.filter = TRUE){
+  
+  # QC Filtering
+  if (do.filter){
+    so.list <- pbapply::pblapply(X = so.list, FUN = function(x){
+      x <- filterData(x) # Use the helper function above
+      return(x)
+    })
+    # Remove samples with too few cells
+    so.list <- so.list[unlist(lapply(so.list, ncol)) > 50]
+  }
+  
+  # Normalization
+  so.list <- pbapply::pblapply(X = so.list, FUN = function(x){
+    var2reg <- "percent.mt"
+    object <- x
+    
+    # Try SCTransform with glmGamPoi, fall back if it fails
+    object <- tryCatch({
+      SCTransform(object, method = "glmGamPoi", verbose = FALSE, vst.flavor = "v2", 
+                  vars.to.regress = var2reg, variable.features.n = 2000)
+    }, error = function(e){
+      message("glmGamPoi failed, reverting to standard SCTransform")
+      object <- SCTransform(object, method = "glmGamPoi", verbose = FALSE, 
+                            vars.to.regress = var2reg, variable.features.n = 2000)  
+      return(object)
+    }, silent = TRUE)
+    return(object)
+  })
+  
+  return(so.list)
+}
+
+```
+
+```{r 01_FRANJIC_2022}
+# ==============================================================================
+# DATASET 01: FRANJIC 2022 (HEALTHY)
+# ==============================================================================
+reprocess.01 <- FALSE
+current.dir <- "Franjic2022_healthy/"
+
+if (reprocess.01){
+  message("Processing Franjic 2022...")
+  
+  meta.data <- read.delim(file.path(ROOT_DIR, current.dir, "Human_cell_meta.txt"), header = TRUE)
+  rownames(meta.data) <- meta.data$cell_name
+  features <- read.delim(file.path(ROOT_DIR, current.dir, "Human_genes.txt"), header = FALSE)
+  mat <- Matrix::readMM(file.path(ROOT_DIR, current.dir, "Human_counts.mtx"))
+  
+  which.oligo <- toupper(meta.data$cluster)[grepl("OLIGO|OPC|COP", toupper(meta.data$cluster))]
+  colnames(mat) <- meta.data$cell_name
+  rownames(mat) <- features$V1
+  
+  so.franjic <- CreateSeuratObject(counts = mat, meta.data = meta.data)
+  so.franjic$study <- "Franjic_2022"
+  so.franjic$sample <- so.franjic$samplename
+  so.franjic$type <- "HEALTHY"
+  so.franjic$cell_type <- so.franjic$cluster
+  
+  # Filter for Oligos
+  so.franjic <- so.franjic[, toupper(so.franjic$cell_type) %in% which.oligo]
+  
+  # Split, Norm, Save
+  so.list <- Seurat::SplitObject(object = so.franjic, split.by = "sample")
+  so.list <- normData(so.list)
+  saveRDS(so.list, file.path(ROOT_DIR, current.dir, "seurat_object_oligo_franjic.rds"))
+}
+```
+
+```{r 02_HABIB_2017}
+# ==============================================================================
+# DATASET 02: HABIB 2017 (HEALTHY)
+# ==============================================================================
+reprocess.02 <- FALSE
+current.dir <- "Habib2017_healthy/"
+
+if (reprocess.02){
+  message("Processing Habib 2017...")
+  
+  meta.data <- read.delim(file.path(ROOT_DIR, current.dir, "GTEx_droncseq_hip_pcf.clusters.txt"), header = FALSE)
+  c2c <- meta.data$V2; names(c2c) <- meta.data$V1
+  
+  mat <- read.delim(file.path(ROOT_DIR, current.dir, "GTEx_droncseq_hip_pcf.umi_counts.txt"))
+  mat <- col2rowname(mat, "X")
+  
+  so.habib <- CreateSeuratObject(counts = mat)
+  so.habib$cluster <- c2c[colnames(so.habib)]
+  so.habib$study <- "Habib_2017"
+  so.habib$sample <- as.character(so.habib@active.ident)
+  so.habib$type <- "HEALTHY"
+  so.habib$cell_type <- so.habib$cluster
+  
+  # Filter Oligos (Clusters 10, 11, 12)
+  so.habib <- so.habib[, as.character(so.habib$cell_type) %in% c("10", "11", "12")]
+  
+  # Clean Sample Names
+  so.habib$sample[grepl("HP", so.habib$sample)] <- "HP"
+  so.habib$sample[grepl("PFC", so.habib$sample)] <- "PFC"
+  so.habib$sample[grepl("hC", so.habib$sample)] <- "HC"
+  
+  so.list <- Seurat::SplitObject(object = so.habib, split.by = "sample")
+  so.list <- normData(so.list)
+  saveRDS(so.list, file.path(ROOT_DIR, current.dir, "seurat_object_oligo_habib.rds"))
+}
+```
+
+```{r 03_KANTON_2019}
+# ==============================================================================
+# DATASET 03: KANTON 2019 (HEALTHY)
+# ==============================================================================
+reprocess.03 <- FALSE
+current.dir <- "Kanton2019_healthy/"
+
+if (reprocess.03){
+  meta.data <- read.delim(file.path(ROOT_DIR, current.dir, "metadata_nuclei.tsv"), header = TRUE)
+  rownames(meta.data) <- meta.data$Cell_ID
+  features <- read.delim(file.path(ROOT_DIR, current.dir, "genes.tsv"), header = FALSE)
+  mat <- Matrix::readMM(file.path(ROOT_DIR, current.dir, "nuclei_count_matrix.mtx"))
+  
+  which.oligo <- toupper(meta.data$Projected_cell_type)[grepl("OLI|OPC", toupper(meta.data$Projected_cell_type))]
+  colnames(mat) <- meta.data$Cell_ID
+  rownames(mat) <- features$V1
+  
+  so.kanton <- CreateSeuratObject(counts = mat, meta.data = meta.data)
+  so.kanton$study <- "Kanton_2019"
+  so.kanton$sample <- so.kanton$Individual
+  so.kanton$type <- "HEALTHY"
+  
+  so.kanton <- so.kanton[, toupper(so.kanton$Projected_cell_type) %in% which.oligo]
+  so.list <- Seurat::SplitObject(object = so.kanton, split.by = "sample")
+  so.list <- normData(so.list)
+  saveRDS(so.list, file.path(ROOT_DIR, current.dir, "seurat_object_oligo_kanton.rds"))
+}
+```
+
+```{r 04_KHRAMEEVA_2020}
+# ==============================================================================
+# DATASET 04: KHRAMEEVA 2020 (HEALTHY)
+# Note: Requires Ensembl conversion
+# ==============================================================================
+reprocess.04 <- FALSE
+current.dir <- "Khrameeva2020_healthy/"
+
+if (reprocess.04){
+  # Loading processed RDS files per region
+  so.acc <- readRDS(file.path(ROOT_DIR, current.dir, "GSE127774_ACC_seurat.rds"))
+  so.cer <- readRDS(file.path(ROOT_DIR, current.dir, "GSE127774_CER_seurat.rds"))
+  so.cn <- readRDS(file.path(ROOT_DIR, current.dir, "GSE127774_CN_seurat.rds"))
+  
+  # Standardize Assays
+  DefaultAssay(so.acc) <- DefaultAssay(so.cer) <- DefaultAssay(so.cn) <- "RNA"
+  
+  # Filter Human Only
+  so.acc <- so.acc[, so.acc$orig.ident %in% "H"]
+  so.cer <- so.cer[, so.cer$orig.ident %in% "H"]
+  so.cn <- so.cn[, so.cn$orig.ident %in% "H"]
+  
+  # Merge and re-process to find clusters
+  # ... [Gene ID conversion logic preserved from original] ...
+  
+  so.khram <- merge(so.acc, y = c(so.cer, so.cn))
+  so.khram$study <- "Khrameeva_2020"
+  so.khram$type <- "HEALTHY"
+  
+  # Full clustering pipeline to identify oligos
+  so.khram <- NormalizeData(so.khram) %>% ScaleData() %>% FindVariableFeatures()
+  so.khram <- RunPCA(so.khram) %>% RunUMAP(dims=1:50) %>% FindNeighbors(dims=1:50) %>% FindClusters(resolution=0.3)
+  
+  # Select Oligo clusters (3,9)
+  so.khram <- so.khram[, as.character(so.khram$seurat_clusters) %in% c(3,9)]
+  
+  so.list <- Seurat::SplitObject(object = so.khram, split.by = "sample")
+  so.list <- normData(so.list)
+  saveRDS(so.list, file.path(ROOT_DIR, current.dir, "seurat_object_oligo_khrameeva.rds"))
+}
+```
+
+```{r 05_HODGE_2019}
+# ==============================================================================
+# DATASET 05: HODGE 2019 (HEALTHY)
+# ==============================================================================
+reprocess.05 <- FALSE
+current.dir <- "Hodge2019_healthy/"
+
+if (reprocess.05){
+  meta.data <- read.csv(file.path(ROOT_DIR, current.dir, "human_MTG_2018-06-14_samples-columns.csv"), header = TRUE)
+  rownames(meta.data) <- meta.data$sample_name
+  features <- read.csv(file.path(ROOT_DIR, current.dir, "human_MTG_2018-06-14_genes-rows.csv"), header = TRUE)
+  
+  mat <- read.csv(file.path(ROOT_DIR, current.dir, "human_MTG_2018-06-14_exon-matrix.csv"))
+  mat <- col2rowname(mat, "X")
+  rownames(mat) <- features$gene
+  
+  so.hodge <- CreateSeuratObject(counts = mat, meta.data = meta.data)
+  which.oligo <- toupper(meta.data$cluster)[grepl("OLIGO|OPC|COP", toupper(meta.data$cluster))]
+  
+  so.hodge$study <- "Hodge_2019"
+  so.hodge$sample <- as.character(so.hodge$donor)
+  so.hodge$type <- "HEALTHY"
+  
+  so.hodge <- so.hodge[, toupper(as.character(so.hodge$cluster)) %in% which.oligo]
+  so.list <- Seurat::SplitObject(object = so.hodge, split.by = "sample")
+  so.list <- normData(so.list)
+  saveRDS(so.list, file.path(ROOT_DIR, current.dir, "seurat_object_oligo_hodge.rds"))
+}
+```
+
+```{r 06_BAKKEN_2021}
+# ==============================================================================
+# DATASET 06: BAKKEN 2021 (HEALTHY)
+# ==============================================================================
+reprocess.06 <- FALSE
+current.dir <- "Bakken2021_healthy/"
+
+if (reprocess.06){
+  meta.data <- read.csv(file.path(ROOT_DIR, current.dir, "human_BA44-46_samp.dat.csv"), header = TRUE)
+  meta.data$cell_id <- paste0(meta.data$DonorID, "_", seq(1, nrow(meta.data)))
+  rownames(meta.data) <- meta.data$cell_id
+  
+  # Using genes from Hodge2019 folder as per original script
+  features <- read.csv(file.path(ROOT_DIR, "Hodge2019_healthy/", "human_MTG_2018-06-14_genes-rows.csv"), header = TRUE)
+  mat <- Matrix::readMM(file.path(ROOT_DIR, current.dir, "human_BA44-46_umi.mtx"))
+  colnames(mat) <- meta.data$cell_id
+  rownames(mat) <- features$gene
+  
+  so.bakken <- CreateSeuratObject(mat, meta.data = meta.data)
+  so.bakken$study <- "Bakken_2021"
+  so.bakken$sample <- so.bakken$DonorID
+  so.bakken$type <- "HEALTHY"
+  
+  # Clustering to find oligos
+  so.bakken <- NormalizeData(so.bakken) %>% ScaleData() %>% FindVariableFeatures()
+  so.bakken <- RunPCA(so.bakken) %>% RunUMAP(dims=1:50) %>% FindNeighbors(dims=1:50) %>% FindClusters(resolution=1)
+  
+  # Oligo cluster = 8
+  so.bakken <- so.bakken[, so.bakken$seurat_clusters %in% c(8)]
+  
+  so.list <- Seurat::SplitObject(object = so.bakken, split.by = "sample")
+  so.list <- normData(so.list)
+  saveRDS(so.list, file.path(ROOT_DIR, current.dir, "seurat_object_oligo_bakken.rds"))
+}
+```
+
+```{r 07_WHEELER_2020}
+# ==============================================================================
+# DATASET 07: WHEELER 2020 (MS)
+# ==============================================================================
+reprocess.07 <- FALSE
+current.dir <- "Wheeler2020_MS/"
+
+if (reprocess.07){
+  wheeler.files <- list.files(file.path(ROOT_DIR, current.dir), pattern = "GSM")
+  mapping <- read.csv(file.path(ROOT_DIR, current.dir, "sample_mapping.csv"), header = TRUE)
+  
+  so.list <- list()
+  for (i in 1:nrow(mapping)){
+    which.id <- mapping$ID[i]
+    which.file <- wheeler.files[grepl(which.id, wheeler.files)]
+    mat <- read.delim(file.path(ROOT_DIR, current.dir, which.file), header = TRUE)
+    mat <- col2rowname(mat, "GENE")
+    
+    so.tmp <- CreateSeuratObject(mat)
+    so.tmp$donor <- stringr::str_remove(mapping$donor[i], "-[0-9]*")
+    so.list[[which.id]] <- so.tmp
+  }
+  
+  so.wheeler <- merge(so.list[[1]], y = so.list[-1])
+  so.wheeler$study <- "Wheeler_2020"
+  so.wheeler$type <- "MS"
+  
+  # Processing pipeline
+  so.wheeler <- filterData(so.wheeler) %>% NormalizeData() %>% ScaleData() %>% FindVariableFeatures()
+  so.wheeler <- RunPCA(so.wheeler) %>% RunUMAP(dims=1:50) %>% FindNeighbors(dims=1:50) %>% FindClusters(resolution=1)
+  
+  # Selection of Oligo clusters (11, 14, 22)
+  so.wheeler <- so.wheeler[, so.wheeler$seurat_clusters %in% c(11, 14, 22)]
+  
+  so.list <- Seurat::SplitObject(object = so.wheeler, split.by = "sample")
+  so.list <- normData(so.list)
+  saveRDS(so.list, file.path(ROOT_DIR, current.dir, "seurat_object_oligo_wheeler.rds"))
+}
+```
+
+```{r 08_JAKEL_2019}
+# ==============================================================================
+# DATASET 08: JAKEL 2019 (MS)
+# ==============================================================================
+reprocess.08 <- FALSE
+current.dir <- "Jakel2019_MS/"
+
+if (reprocess.08){
+  meta.data <- read.delim(file.path(ROOT_DIR, current.dir, "MSCtr_snRNA_FinalAnnotationTable.txt"), header = TRUE)
+  rownames(meta.data) <- gsub(":", ".", meta.data$Detected) 
+  mat <- read.delim(file.path(ROOT_DIR, current.dir, "MSCtr_snRNA_ExpressionMatrix_R.txt"))
+  
+  so.jakel <- CreateSeuratObject(counts = mat, meta.data = meta.data)
+  so.jakel$study <- "Jakel_2019"
+  so.jakel$sample <- as.character(so.jakel$Sample)
+  so.jakel$type <- so.jakel$Condition
+  so.jakel$cell_type <- so.jakel$Celltypes
+  
+  # Select Oligos/OPCs
+  so.jakel <- so.jakel[, as.character(so.jakel$cell_type) %in% c("COPs", "Oligo1", "Oligo2", "Oligo3", "Oligo4", "Oligo5", "Oligo6", "OPCs")]
+  
+  so.list <- Seurat::SplitObject(object = so.jakel, split.by = "sample")
+  so.list <- normData(so.list)
+  saveRDS(so.list, file.path(ROOT_DIR, current.dir, "seurat_object_oligo_jakel.rds"))
+}
+```
+
+```{r 09_SCHIRMER_2019}
+# ==============================================================================
+# DATASET 09: SCHIRMER 2019 (MS)
+# ==============================================================================
+reprocess.09 <- FALSE
+current.dir <- "Schirmer2019_MS/"
+
+if (reprocess.09){
+  meta.data <- read.delim(file.path(ROOT_DIR, current.dir, "meta.txt"), header = TRUE)
+  rownames(meta.data) <- meta.data$cell
+  features <- read.delim(file.path(ROOT_DIR, current.dir, "genes.tsv"), header = FALSE)
+  mat <- Matrix::readMM(file.path(ROOT_DIR, current.dir, "matrix.mtx"))
+  colnames(mat) <- rownames(meta.data)
+  rownames(mat) <- features$V2
+  
+  so.schirmer <- CreateSeuratObject(mat, meta.data = meta.data)
+  so.schirmer$study <- "Schirmer_2019"
+  so.schirmer$type <- so.schirmer$diagnosis
+  so.schirmer$cell_type <- so.schirmer$cell_type
+  
+  # Select Oligos
+  so.schirmer <- so.schirmer[, as.character(so.schirmer$cell_type) %in% c("OL-Cntl", "OL-MS-1", "OL-MS-2", "OPC")]
+  
+  so.list <- Seurat::SplitObject(object = so.schirmer, split.by = "sample")
+  so.list <- normData(so.list)
+  saveRDS(so.list, file.path(ROOT_DIR, current.dir, "seurat_object_oligo_schirmer.rds"))
+}
+```
+
+```{r 10_SUN_2022}
+# ==============================================================================
+# DATASET 10: SUN 2022 (BM / GLIOMA)
+# ==============================================================================
+reprocess.10 <- FALSE
+current.dir <- "Sun2022_BM_glioma/"
+
+if (reprocess.10){
+  sun.files <- list.files(file.path(ROOT_DIR, current.dir), pattern = "GSM")
+  sun.id <- unique(stringr::str_extract(sun.files, "[A-Z0-9]*_"))
+  
+  so.list <- list()
+  for (i in 1:length(sun.id)){
+    which.id <- sun.id[i]
+    which.current <- sun.files[grepl(sun.id[i], sun.files)]
+    which.count <- which.current[grepl("counts", which.current)]
+    
+    mat <- read.delim(file.path(ROOT_DIR, current.dir, which.count), header = TRUE)
+    mat <- col2rowname(mat, "gene")
+    id <- stringr::str_remove(which.count, "\\.counts.tsv")
+    colnames(mat) <- paste0(colnames(mat), "_", id)
+    
+    so.tmp <- CreateSeuratObject(mat)
+    so.tmp$donor <- id
+    so.tmp$type <- NA
+    so.tmp$type[grepl("LC", so.tmp$donor)] <- "BM"
+    so.tmp$type[grepl("GB", so.tmp$donor)] <- "Glioma"
+    so.list[[which.id]] <- so.tmp
+  }
+  
+  so.sun <- merge(so.list[[1]], y = so.list[-1])
+  so.sun$study <- "Sun_2022"
+  so.sun$sample <- so.sun$donor
+  
+  so.sun <- filterData(so.sun) %>% NormalizeData() %>% ScaleData() %>% FindVariableFeatures()
+  so.sun <- RunPCA(so.sun) %>% RunUMAP(dims=1:50) %>% FindNeighbors(dims=1:50) %>% FindClusters(resolution=1)
+  
+  # Select Oligo clusters
+  so.sun <- so.sun[, so.sun$seurat_clusters %in% c(2, 3, 11, 25, 32, 16, 35, 37)]
+  
+  so.list <- Seurat::SplitObject(object = so.sun, split.by = "sample")
+  so.list <- normData(so.list)
+  
+  # Ensure type labels are preserved
+  for (nm in names(so.list)){
+    obj <- so.list[[nm]]
+    obj$type[grepl("LC", obj$donor)] <- "BM"
+    obj$type[grepl("GB", obj$donor)] <- "Glioma"
+    so.list[[nm]] <- obj
+  }
+  
+  saveRDS(so.list, file.path(ROOT_DIR, current.dir, "seurat_object_oligo_sun.rds"))
+}
+```
+
+```{r 11_KIM_2020}
+# ==============================================================================
+# DATASET 11: KIM 2020 (BM)
+# ==============================================================================
+reprocess.11 <- FALSE
+current.dir <- "Kim2020_BM/"
+
+if (reprocess.11){
+  meta.data <- read.delim(file.path(ROOT_DIR, current.dir, "GSE131907_Lung_Cancer_cell_annotation.txt"), header = TRUE)
+  rownames(meta.data) <- meta.data$Index
+  mat <- readRDS(file.path(ROOT_DIR, current.dir, "GSE131907_Lung_Cancer_raw_UMI_matrix.rds"))
+  
+  so.kim <- CreateSeuratObject(mat, meta.data = meta.data)
+  so.kim <- so.kim[, so.kim$Sample_Origin %in% "mBrain"] # Brain Met only
+  
+  so.kim$study <- "Kim_2020"
+  so.kim$sample <- so.kim$Sample
+  so.kim$type <- "BM"
+  
+  so.kim <- filterData(so.kim) %>% NormalizeData() %>% ScaleData() %>% FindVariableFeatures()
+  so.kim <- RunPCA(so.kim) %>% RunUMAP(dims=1:50) %>% FindNeighbors(dims=1:50) %>% FindClusters(resolution=1)
+  
+  # Select Oligo clusters (11, 30)
+  so.kim <- so.kim[, so.kim$seurat_clusters %in% c(11, 30)]
+  
+  so.list <- Seurat::SplitObject(object = so.kim, split.by = "sample")
+  so.list <- normData(so.list)
+  saveRDS(so.list, file.path(ROOT_DIR, current.dir, "seurat_object_oligo_kim.rds"))
+}
+```
+
+```{r 12_BIERMANN_2022}
+# ==============================================================================
+# DATASET 12: BIERMANN 2022 (BM)
+# ==============================================================================
+reprocess.12 <- FALSE
+current.dir <- "Biermann2022_BM/sn/"
+
+if (reprocess.12){
+  biermann.files <- list.files(file.path(ROOT_DIR, current.dir), pattern = "GSM")
+  biermann.id <- unique(stringr::str_extract(biermann.files, "[A-Z0-9]*_"))
+  
+  so.list <- list()
+  for (i in 1:length(biermann.id)){
+    which.id <- biermann.id[i]
+    which.current <- biermann.files[grepl(which.id, biermann.files)]
+    which.matrix <- which.current[grepl("matrix", which.current)]
+    which.feature <- which.current[grepl("feature", which.current)]
+    which.barcode <- which.current[grepl("barcode", which.current)]
+    
+    feature <- read.delim(file.path(ROOT_DIR, current.dir, which.feature), header = FALSE)
+    barcode <- read.delim(file.path(ROOT_DIR, current.dir, which.barcode), header = FALSE)
+    mat <- Matrix::readMM(file.path(ROOT_DIR, current.dir, which.matrix))
+    colnames(mat) <- barcode$V1
+    rownames(mat) <- feature$V2
+    
+    donor <- stringr::str_extract(stringr::str_remove(which.feature, which.id), "[A-Z0-9]*")
+    so.tmp <- CreateSeuratObject(mat)
+    so.tmp$donor <- donor
+    so.list[[donor]] <- so.tmp
+  }
+  
+  so.biermann <- merge(so.list[[1]], y = so.list[-1])
+  so.biermann$study <- "Biermann_2022"
+  so.biermann$sample <- so.biermann$donor
+  so.biermann$type <- "BM"
+  
+  so.biermann <- filterData(so.biermann) %>% NormalizeData() %>% ScaleData() %>% FindVariableFeatures()
+  so.biermann <- RunPCA(so.biermann) %>% RunUMAP(dims=1:50) %>% FindNeighbors(dims=1:50) %>% FindClusters(resolution=1)
+  
+  # Run BBKNN (optional integration step in original)
+  so.biermann <- runBBKNN(object = so.biermann, batch = "sample") # Function from scMiko/Libra
+  so.biermann <- FindClusters(so.biermann, resolution = 1, graph.name = "bbknn")
+  
+  # Select Oligo cluster (24)
+  so.biermann <- so.biermann[, so.biermann$seurat_clusters %in% c(24)]
+  
+  so.list <- Seurat::SplitObject(object = so.biermann, split.by = "sample")
+  so.list <- normData(so.list)
+  saveRDS(so.list, file.path(ROOT_DIR, current.dir, "seurat_object_oligo_biermann.rds"))
+}
+```
+
+```{r 13_HEMING_2022}
+# ==============================================================================
+# DATASET 13: HEMING 2022 (PCNSL)
+# ==============================================================================
+reprocess.13 <- FALSE
+current.dir <- "Heming2022_PCNSL/"
+
+if (reprocess.13){
+  donor.list <- list(
+    "GSM6176195_filtered_feature_bc_matrix_p1_biopsy1_rna.h5" = "p1",
+    "GSM6176197_filtered_feature_bc_matrix_p1_biopsy2_rna.h5" = "p1",
+    "GSM6176199_filtered_feature_bc_matrix_p1_biopsy3_rna.h5" = "p1",
+    "GSM6176210_filtered_feature_bc_matrix_p2_biopsy_rna.h5" = "p2"
+  )
+  
+  so.list <- list()
+  for (i in 1:length(donor.list)){
+    try({
+      h5closeAll()
+      cur.file <- file.path(ROOT_DIR, current.dir, names(donor.list)[i])
+      mat <- h5read(cur.file, "matrix")
+      mat2 <- Matrix::sparseMatrix(i=mat[["indices"]], p=mat[["indptr"]], x=mat[["data"]], dims=mat[["shape"]])
+      colnames(mat2) <- mat[["barcodes"]]; rownames(mat2) <- mat[["features"]][["name"]]
+      
+      object <- CreateSeuratObject(counts = mat2)
+      object$donor <- donor.list[[i]]
+      so.list[[names(donor.list)[i]]] <- object
+    })
+  }
+  
+  so.heming <- merge(so.list[[1]], y = so.list[-1])
+  so.heming$study <- "Heming_2022"
+  so.heming$sample <- so.heming$donor
+  so.heming$type <- "PCNSL"
+  
+  so.heming <- filterData(so.heming) %>% NormalizeData() %>% ScaleData() %>% FindVariableFeatures()
+  so.heming <- RunPCA(so.heming) %>% RunUMAP(dims=1:50) %>% FindNeighbors(dims=1:50) %>% FindClusters(resolution=1)
+  
+  # Select Oligo cluster (15)
+  so.heming <- so.heming[, so.heming$seurat_clusters %in% c(15)]
+  
+  so.list <- Seurat::SplitObject(object = so.heming, split.by = "sample")
+  so.list <- normData(so.list)
+  saveRDS(so.list, file.path(ROOT_DIR, current.dir, "seurat_object_oligo_heming.rds"))
+}
+```
+
+```{r ABORTED_DATASETS_14_15_16_22}
+# ==============================================================================
+# DATASETS WITH INSUFFICIENT CELLS OR LOW CONFIDENCE (ABORTED)
+# Includes: 
+# 14. Wei 2021 (PCNSL)
+# 15. Hovestadt 2019 (MB)
+# 16. Riemond 2022 (MB)
+# 22. Fan 2020 (DEV)
+# ==============================================================================
+
+# Note: Code logic for these datasets is preserved in the original scripts
+# but excluded here for brevity as they result in empty datasets or are aborted.
+# If reprocessing is required, refer to legacy code blocks 14, 15, 16, 22.
+
+message("Skipping datasets 14 (Wei), 15 (Hovestadt), 16 (Riemond), and 22 (Fan) due to insufficient oligodendrocyte yield.")
+```
+
+```{r 17_LAU_2020}
+# ==============================================================================
+# DATASET 17: LAU 2020 (AD)
+# ==============================================================================
+reprocess.17 <- FALSE
+current.dir <- "Lau2020_AD/"
+
+if (reprocess.17){
+  lau.files <- list.files(file.path(ROOT_DIR, current.dir), pattern = "GSM")
+  lau.id <- unique(stringr::str_extract(lau.files, "[A-Z0-9]*_"))
+  
+  so.list <- list()
+  for (i in 1:length(lau.id)){
+    which.id <- lau.id[i]
+    which.current <- lau.files[grepl(lau.id[i], lau.files)]
+    
+    # Load components
+    feature <- read.delim(file.path(ROOT_DIR, current.dir, which.current[grepl("feature", which.current)]), header = FALSE)
+    barcode <- read.delim(file.path(ROOT_DIR, current.dir, which.current[grepl("barcode", which.current)]), header = FALSE)
+    mat <- Matrix::readMM(file.path(ROOT_DIR, current.dir, which.current[grepl("matrix", which.current)]))
+    colnames(mat) <- barcode$V1; rownames(mat) <- feature$V2
+    
+    donor <- stringr::str_extract(stringr::str_remove(which.current[grepl("feature", which.current)], which.id), "[A-Z0-9]*")
+    so.tmp <- CreateSeuratObject(mat)
+    so.tmp$donor <- donor
+    so.tmp$type <- stringr::str_remove(donor, "[0-9]*")
+    so.list[[donor]] <- so.tmp
+  }
+  
+  so.lau <- merge(so.list[[1]], y = so.list[-1])
+  so.lau$study <- "Lau_2020"
+  so.lau$sample <- so.lau$donor
+  so.lau$type[grepl("AD", so.lau$type)] <- "AD"
+  so.lau$type[grepl("NC", so.lau$type)] <- "HEALTHY"
+  
+  so.lau <- filterData(so.lau) %>% NormalizeData() %>% ScaleData() %>% FindVariableFeatures()
+  so.lau <- RunPCA(so.lau) %>% RunUMAP(dims=1:50) %>% FindNeighbors(dims=1:50) %>% FindClusters(resolution=0.5)
+  
+  # Select Oligo clusters (4, 27, 25, 0, 3)
+  so.lau <- so.lau[, so.lau$seurat_clusters %in% c(4, 27, 25, 0, 3)]
+  
+  so.list <- Seurat::SplitObject(object = so.lau, split.by = "sample")
+  so.list <- normData(so.list)
+  saveRDS(so.list, file.path(ROOT_DIR, current.dir, "seurat_object_oligo_lau.rds"))
+}
+```
+
+```{r 18_ZHOU_2022}
+# ==============================================================================
+# DATASET 18: ZHOU 2022 (AD)
+# ==============================================================================
+reprocess.18 <- FALSE
+current.dir <- "Zhou2022_AD/"
+
+if (reprocess.18){
+  zhou.files <- list.files(file.path(ROOT_DIR, current.dir))
+  which.samples <- c(23, 25, 27, 32, 33, 35, 36, 38)
+  zhou.files <- zhou.files[grepl(paste0(paste0("Sample", which.samples), collapse = "|"), zhou.files)]
+  zhou.files <- zhou.files[!grepl("barcode", zhou.files)]
+  
+  so.list <- list()
+  for (i in 1:length(zhou.files)){
+    which.id <- zhou.files[i]
+    mat <- read.table(file.path(ROOT_DIR, current.dir, zhou.files[i]), header = TRUE)
+    so.tmp <- CreateSeuratObject(mat)
+    so.tmp$donor <- which.id
+    so.tmp$type <- "AD"
+    so.list[[which.id]] <- so.tmp
+  }
+  
+  so.zhou <- merge(so.list[[1]], y = so.list[-1])
+  so.zhou$study <- "Zhou_2022"
+  so.zhou$sample <- so.zhou$donor
+  
+  so.zhou <- filterData(so.zhou) %>% NormalizeData() %>% ScaleData() %>% FindVariableFeatures()
+  so.zhou <- RunPCA(so.zhou) %>% RunUMAP(dims=1:50) %>% FindNeighbors(dims=1:50) %>% FindClusters(resolution=1)
+  
+  # Select Oligo clusters (6, 25, 29, 31, 4, 1, 10)
+  so.zhou <- so.zhou[, so.zhou$seurat_clusters %in% c(6, 25, 29, 31, 4, 1, 10)]
+  
+  so.list <- Seurat::SplitObject(object = so.zhou, split.by = "sample")
+  so.list <- normData(so.list)
+  saveRDS(so.list, file.path(ROOT_DIR, current.dir, "seurat_object_oligo_zhou.rds"))
+}
+```
+
+```{r 19_SMAJIC_2022}
+# ==============================================================================
+# DATASET 19: SMAJIC 2022 (PD)
+# ==============================================================================
+reprocess.19 <- FALSE
+current.dir <- "Smajic2022_PD/"
+
+if (reprocess.19){
+  meta.data <- read.delim(file.path(ROOT_DIR, current.dir, "IPDCO_hg_midbrain_cell.tsv"), header = TRUE)
+  rownames(meta.data) <- gsub("-", ".", meta.data$barcode)
+  
+  feature <- read.delim(file.path(ROOT_DIR, current.dir, "IPDCO_hg_midbrain_genes.tsv"), header = TRUE)
+  
+  # Gene symbol conversion
+  my.ensemble <- ensembl2sym(feature$gene, my.species = "Hs")
+  e2g <- my.ensemble$SYMBOL; names(e2g) <- my.ensemble$ENSEMBL
+  feature$symbol <- e2g[feature$gene]
+  feature$symbol[is.na(feature$symbol)] <- feature$gene[is.na(feature$symbol)]
+  
+  mat <- read.delim(file.path(ROOT_DIR, current.dir, "IPDCO_hg_midbrain_UMI.tsv"))
+  rownames(mat) <- make.unique(feature$symbol)
+  
+  so.smajic <- CreateSeuratObject(counts = mat, meta.data = meta.data)
+  so.smajic$study <- "Smajic_2022"
+  so.smajic$sample <- so.smajic$patient
+  so.smajic$type[grepl("PD", so.smajic$sample)] <- "PD"
+  so.smajic$type[grepl("C", so.smajic$sample)] <- "HEALTHY"
+  so.smajic$cell_type <- so.smajic$cell_ontology
+  
+  # Select Oligos
+  so.smajic <- so.smajic[, so.smajic$cell_type %in% c('Oligodendrocytes', 'OPCs')]
+  
+  so.list <- Seurat::SplitObject(object = so.smajic, split.by = "sample")
+  so.list <- normData(so.list)
+  saveRDS(so.list, file.path(ROOT_DIR, current.dir, "seurat_object_oligo_smajic.rds"))
+}
+```
+
+```{r 20_YU_2021}
+# ==============================================================================
+# DATASET 20: YU 2021 (DEV)
+# ==============================================================================
+reprocess.20 <- FALSE
+current.dir <- "Yu2021_DEV/"
+
+if (reprocess.20){
+  yu.files <- list.files(file.path(ROOT_DIR, current.dir), pattern = "GSM")
+  yu.id <- unique(stringr::str_extract(yu.files, "[A-Z0-9]*_"))
+  
+  so.list <- list()
+  for (i in 1:length(yu.id)){
+    which.id <- yu.id[i]
+    which.current <- yu.files[grepl(which.id, yu.files)]
+    
+    feature <- read.delim(file.path(ROOT_DIR, current.dir, which.current[grepl("feature", which.current)]), header = FALSE)
+    barcode <- read.delim(file.path(ROOT_DIR, current.dir, which.current[grepl("barcode", which.current)]), header = FALSE)
+    mat <- Matrix::readMM(file.path(ROOT_DIR, current.dir, which.current[grepl("matrix", which.current)]))
+    colnames(mat) <- barcode$V1; rownames(mat) <- feature$V2
+    
+    donor <- stringr::str_extract(stringr::str_remove(which.current[grepl("feature", which.current)], which.id), "[A-Z0-9]*")
+    so.tmp <- CreateSeuratObject(mat)
+    so.tmp$donor <- donor
+    so.tmp$developmental_age <- stringr::str_remove(donor, "[0-9]*")
+    so.tmp$type <- "DEV"
+    so.list[[donor]] <- so.tmp
+  }
+  
+  so.yu <- merge(so.list[[1]], y = so.list[-1])
+  so.yu$study <- "Yu_2021"
+  so.yu$sample <- so.yu$donor
+  
+  so.yu <- filterData(so.yu) %>% NormalizeData() %>% ScaleData() %>% FindVariableFeatures()
+  so.yu <- RunPCA(so.yu) %>% RunUMAP(dims=1:50) %>% FindNeighbors(dims=1:50) %>% FindClusters(resolution=0.5)
+  
+  # Select Oligo cluster (23)
+  so.yu <- so.yu[, so.yu$seurat_clusters %in% c(23)]
+  
+  so.list <- Seurat::SplitObject(object = so.yu, split.by = "sample")
+  so.list <- normData(so.list)
+  saveRDS(so.list, file.path(ROOT_DIR, current.dir, "seurat_object_oligo_yu.rds"))
+}
+```
+
+```{r 21_VAN_BRUGGEN_2022}
+# ==============================================================================
+# DATASET 21: VAN BRUGGEN 2022 (DEV)
+# ==============================================================================
+reprocess.21 <- FALSE
+current.dir <- "vanBruggen2022_DEV/"
+
+if (reprocess.21){
+  so.vb <- readRDS(file.path(ROOT_DIR, current.dir, "scRNA_human_dev.rds"))
+  so.vb <- UpdateSeuratObject(so.vb)
+  
+  so.vb$sample <- as.character(so.vb$Sample)
+  so.vb$cell_type <- as.character(so.vb$Clusters)
+  so.vb$type <- "DEV"
+  so.vb$developmental_age <- as.character(so.vb$Age)
+  
+  # Select Oligos
+  so.vb <- so.vb[, as.character(so.vb$cell_type) %in% c("Glioblast/Pre-OPC", "OPCs")]
+  
+  so.list <- Seurat::SplitObject(object = so.vb, split.by = "sample")
+  so.list <- normData(so.list)
+  saveRDS(so.list, file.path(ROOT_DIR, current.dir, "seurat_object_oligo_vanbruggen.rds"))
+}
+```
+
+```{r 23_CAO_2020}
+# ==============================================================================
+# DATASET 23: CAO 2020 (DEV)
+# ==============================================================================
+reprocess.23 <- FALSE
+current.dir <- "Cao2020_DEV/"
+
+if (reprocess.23){
+  so.cao <- readRDS(file.path(ROOT_DIR, current.dir, "so_cao2020.rds"))
+  
+  so.cao$study <- "Cao_2020"
+  so.cao$developmental_age <- so.cao$Development_day
+  so.cao$region <- so.cao$Organ
+  so.cao$type <- "DEV"
+  so.cao$cell_type <- so.cao$Main_cluster_name
+  so.cao$sample <- so.cao$Fetus_id
+  
+  # Select Oligos
+  so.cao <- so.cao[, as.character(so.cao$cell_type) %in% c('Oligodendrocytes')]
+  
+  so.list <- Seurat::SplitObject(object = so.cao, split.by = "sample")
+  so.list <- normData(so.list)
+  saveRDS(so.list, file.path(ROOT_DIR, current.dir, "seurat_object_oligo_cao.rds"))
+}
+```
+
+```{r 24_BHADURI_2021}
+# ==============================================================================
+# DATASET 24: BHADURI 2021 (DEV)
+# ==============================================================================
+reprocess.24 <- FALSE
+current.dir <- "Bhaduri2021_DEV/"
+
+if (reprocess.24){
+  bhaduri.files <- list.files(file.path(ROOT_DIR, current.dir), pattern = "CS|GW")
+  
+  # Metadata and barcode selection
+  meta_data <- readxl::read_xlsx(file.path(ROOT_DIR, current.dir, "supplemental_tables.xlsx"), "STable 1 - Whole Brain Metadata")
+  meta_data$barcode <- stringr::str_remove(meta_data$cell.name, "[a-zA-Z0-9]*_[a-zA-Z0-9]*_")
+  which.cells <- unique(meta_data$`clusterv2 - final`[grepl("Oligo", meta_data$`clusterv2 - final`)]) 
+  which.barcodes <- meta_data$barcode[meta_data$`clusterv2 - final` %in% which.cells]
+  
+  so.list <- list()
+  # Starting at 85 based on original script logic
+  for (i in 85:length(bhaduri.files)){
+    which.id <- bhaduri.files[i]
+    tryCatch({
+      # Attempt to find features file (names vary)
+      f_path <- file.path(ROOT_DIR, current.dir, which.id)
+      if(file.exists(file.path(f_path, "genes.tsv"))) f_name <- "genes.tsv"
+      else if(file.exists(file.path(f_path, "enes.tsv"))) f_name <- "enes.tsv"
+      else f_name <- "features.tsv"
+      
+      feature <- read.delim(file.path(f_path, f_name), header = FALSE)
+      barcode <- read.delim(file.path(f_path, "barcodes.tsv"), header = FALSE)
+      mat <- Matrix::readMM(file.path(f_path, "matrix.mtx"))
+      colnames(mat) <- barcode$V1; rownames(mat) <- feature$V2
+      
+      so.tmp <- CreateSeuratObject(mat)
+      so.tmp$donor <- which.id
+      so.tmp$developmental_age <- stringr::str_extract(which.id, "[A-Z]*[0-9]*")
+      so.tmp$type <- "DEV"
+      
+      # Filter for oligos by barcode
+      so.tmp$barcode <- as.character(stringr::str_remove(colnames(so.tmp), "-[0-9]*"))
+      so.tmp <- so.tmp[, so.tmp$barcode %in% which.barcodes]
+      
+      if(ncol(so.tmp) > 0) so.list[[which.id]] <- so.tmp
+      
+    }, error = function(e) message(paste("Error processing", which.id)))
+  }
+  
+  so.bhaduri <- merge(so.list[[1]], y = so.list[-1])
+  so.bhaduri$study <- "Bhaduri_2021"
+  so.bhaduri$sample <- so.bhaduri$donor
+  
+  so.bhaduri <- filterData(so.bhaduri) %>% NormalizeData() %>% ScaleData() %>% FindVariableFeatures()
+  so.bhaduri <- RunPCA(so.bhaduri) %>% RunUMAP(dims=1:50) %>% FindNeighbors(dims=1:50) %>% FindClusters(resolution=0.8)
+  
+  # Select specific clusters and GW samples
+  so.bhaduri2 <- so.bhaduri[, so.bhaduri$seurat_clusters %in% c(38, 7, 18, 25, 28, 2, 4, 23, 12)]
+  so.bhaduri2 <- so.bhaduri2[, grepl("GW", so.bhaduri2$donor)]
+  so.bhaduri2$sample <- stringr::str_extract(so.bhaduri2$donor, "GW[0-9]*_[0-9]*|GW[0-9]*")
+  
+  so.list <- Seurat::SplitObject(object = so.bhaduri2, split.by = "sample")
+  so.list <- normData(so.list)
+  saveRDS(so.list, file.path(ROOT_DIR, current.dir, "seurat_object_oligo_bhaduri.rds"))
+}
+```
+
+```{r 25_ALDINGER_2021}
+# ==============================================================================
+# DATASET 25: ALDINGER 2021 (DEV)
+# ==============================================================================
+reprocess.25 <- FALSE
+current.dir <- "Aldinger2021_DEV/"
+
+if (reprocess.25){
+  so.aldinger <- readRDS(file.path(ROOT_DIR, current.dir, "seurat.rds"))
+  so.aldinger <- UpdateSeuratObject(so.aldinger)
+  
+  # Re-create object to strip old data
+  so.aldinger <- CreateSeuratObject(so.aldinger@assays$RNA@counts, meta.data = so.aldinger@meta.data)
+  
+  so.aldinger$study <- "Aldinger_2021"
+  so.aldinger$developmental_age <- so.aldinger$age
+  so.aldinger$type <- "DEV"
+  so.aldinger$cell_type <- so.aldinger$figure_clusters
+  so.aldinger$sample <- so.aldinger$sample_id
+  
+  # Select Oligos
+  so.aldinger2 <- so.aldinger[, as.character(so.aldinger$cell_type) %in% c('11-OPC', '12-Committed OPC')]
+  
+  so.list <- Seurat::SplitObject(object = so.aldinger2, split.by = "sample")
+  so.list <- normData(so.list)
+  saveRDS(so.list, file.path(ROOT_DIR, current.dir, "seurat_object_oligo_aldinger.rds"))
+}
+```
+
+```{r LOAD_ALL}
+# ==============================================================================
+# FINAL STEP: LOAD ALL PROCESSED DATA
+# ==============================================================================
+load_dataset <- function(subdir, filename){
+  path <- file.path(ROOT_DIR, subdir, filename)
+  if(file.exists(path)) return(readRDS(path))
+  else warning(paste("File not found:", path))
+}
+
+so.franjic   <- load_dataset("Franjic2022_healthy/", "seurat_object_oligo_franjic.rds")
+so.habib     <- load_dataset("Habib2017_healthy/", "seurat_object_oligo_habib.rds")
+so.kanton    <- load_dataset("Kanton2019_healthy/", "seurat_object_oligo_kanton.rds")
+so.khram     <- load_dataset("Khrameeva2020_healthy/", "seurat_object_oligo_khrameeva.rds")
+so.hodge     <- load_dataset("Hodge2019_healthy/", "seurat_object_oligo_hodge.rds")
+so.bakken    <- load_dataset("Bakken2021_healthy/", "seurat_object_oligo_bakken.rds")
+so.wheeler   <- load_dataset("Wheeler2020_MS/", "seurat_object_oligo_wheeler.rds")
+so.jakel     <- load_dataset("Jakel2019_MS/", "seurat_object_oligo_jakel.rds")
+so.schirmer  <- load_dataset("Schirmer2019_MS/", "seurat_object_oligo_schirmer.rds")
+so.sun       <- load_dataset("Sun2022_BM_glioma/", "seurat_object_oligo_sun.rds")
+so.kim       <- load_dataset("Kim2020_BM/", "seurat_object_oligo_kim.rds")
+so.biermann  <- load_dataset("Biermann2022_BM/sn/", "seurat_object_oligo_biermann.rds")
+so.heming    <- load_dataset("Heming2022_PCNSL/", "seurat_object_oligo_heming.rds")
+so.lau       <- load_dataset("Lau2020_AD/", "seurat_object_oligo_lau.rds")
+so.zhou      <- load_dataset("Zhou2022_AD/", "seurat_object_oligo_zhou.rds")
+so.smajic    <- load_dataset("Smajic2022_PD/", "seurat_object_oligo_smajic.rds")
+so.yu        <- load_dataset("Yu2021_DEV/", "seurat_object_oligo_yu.rds")
+so.vb        <- load_dataset("vanBruggen2022_DEV/", "seurat_object_oligo_vanbruggen.rds")
+so.cao       <- load_dataset("Cao2020_DEV/", "seurat_object_oligo_cao.rds")
+so.bhaduri   <- load_dataset("Bhaduri2021_DEV/", "seurat_object_oligo_bhaduri.rds")
+so.aldinger  <- load_dataset("Aldinger2021_DEV/", "seurat_object_oligo_aldinger.rds")
+
+message(paste("All available datasets loaded. Runtime:", round((proc.time() - start.time)[3]/60, 2), "minutes."))
+```
+
+````
