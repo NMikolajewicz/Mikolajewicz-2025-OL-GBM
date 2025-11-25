@@ -7,7 +7,7 @@ This repository contains the R code for generating an oligodendrocyte meta-atlas
 ## Repository Structure
 
 ```
-├── OL_meta_atlas_analysis.Rmd          # Main R Notebook (integration + NMF)
+├── OL_meta_atlas_analysis.R             # Main R script (preprocessing + integration + NMF)
 ├── README.md                            # This file
 ```
 
