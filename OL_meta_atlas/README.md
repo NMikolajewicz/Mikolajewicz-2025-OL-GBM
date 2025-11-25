@@ -79,7 +79,7 @@ results <- main()
 
 ## Data Availability
 
-Integrated oligodendrocyte-lineage meta-atlas is available for download [here]([10.6084/m9.figshare.30702419](https://doi.org/10.6084/m9.figshare.30702419.v1))
+Integrated oligodendrocyte-lineage meta-atlas is available for download [here]([10.6084/m9.figshare.30702419](https://doi.org/10.6084/m9.figshare.30702419.v1)
 <br>Citation: Mikolajewicz, Nicholas (2025). scRNA-seq, Oligodendrocyte-Lineage Meta-Atlas. figshare. Dataset. https://doi.org/10.6084/m9.figshare.30702419.v1
 
 Input data consists of preprocessed Seurat objects containing oligodendrocyte cells extracted from the following studies:
