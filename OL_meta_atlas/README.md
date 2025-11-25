@@ -69,51 +69,51 @@ reticulate::use_condaenv("bbknn")
 Input data consists of preprocessed Seurat objects containing oligodendrocyte cells extracted from the following studies:
 
 ### Healthy Brain
-| Study | GEO/Source | Citation |
+| Study | GEO/Source | Journal |
 |-------|-----------|----------|
-| Franjic et al., 2022 | GSE186538 | Neuron 2022 |
-| Habib et al., 2017 | - | Nature Methods 2017 |
-| Kanton et al., 2019 | E-MTAB-8230 | Nature 2019 |
-| Khrameeva et al., 2020 | GSE127774 | Genome Research 2020 |
-| Hodge et al., 2019 | Allen Brain Atlas | Nature 2019 |
-| Bakken et al., 2021 | SCR_016152 | Nature 2021 |
+| Franjic et al., 2022 | GSE186538 | Neuron |
+| Habib et al., 2017 | - | Nature Methods |
+| Kanton et al., 2019 | E-MTAB-8230 | Nature |
+| Khrameeva et al., 2020 | GSE127774 | Genome Research |
+| Hodge et al., 2019 | Allen Brain Atlas | Nature |
+| Bakken et al., 2021 | SCR_016152 | Nature |
 
 ### Multiple Sclerosis
 | Study | GEO/Source | Citation |
 |-------|-----------|----------|
-| Wheeler et al., 2020 | GSE138852 | Nature 2020 |
-| Jäkel et al., 2019 | GSE118257 | Nature 2019 |
-| Schirmer et al., 2019 | GSE118257 | Nature 2019 |
+| Wheeler et al., 2020 | GSE130119 | Nature |
+| Jäkel et al., 2019 | GSE118257 | Nature |
+| Schirmer et al., 2019 | Cell Browser (ms) | Nature |
 
 ### Brain Tumors
 | Study | GEO/Source | Citation |
 |-------|-----------|----------|
-| Sun et al., 2022 | - | Brain metastasis/Glioma |
-| Kim et al., 2020 | GSE131907 | Brain metastasis |
-| Biermann et al., 2022 | - | Brain metastasis |
-| Heming et al., 2022 | GSE203187 | PCNSL |
+| Sun et al., 2022 | GSE202371 | Clinical and Translational Medicine |
+| Kim et al., 2020 | GSE131907 | Nature Communications |
+| Biermann et al., 2022 | GSE185386 | Cell |
+| Heming et al., 2022 | GSE203552 | Genome Medicine |
 
 ### Neurodegenerative Diseases
 | Study | GEO/Source | Citation |
 |-------|-----------|----------|
-| Lau et al., 2020 | GSE138852 | Alzheimer's Disease |
-| Smajić et al., 2022 | - | Parkinson's Disease |
+| Lau et al., 2020 | GSE157827 | PNAS |
+| Smajić et al., 2022 | GSE157783 | Brain |
 
 ### Developmental
 | Study | GEO/Source | Citation |
 |-------|-----------|----------|
-| Yu et al., 2021 | - | Dev brain |
-| van Bruggen et al., 2022 | - | Dev brain |
-| Cao et al., 2020 | - | Human cell atlas |
-| Bhaduri et al., 2021 | - | Dev brain |
-| Aldinger et al., 2021 | - | Cerebellum |
+| Yu et al., 2021 | GSE165388 | Nature Neuroscience |
+| van Bruggen et al., 2022 | Zenodo | Developmental Cell |
+| Cao et al., 2020 | - | Science |
+| Bhaduri et al., 2021 | SCR_002001 | Nature |
+| Aldinger et al., 2021 | Cell Browser (cbl-dev) | Nature Neuroscience |
 
 ### Glioblastoma (Primary Analysis)
 | Study | Source | Citation |
 |-------|--------|----------|
-| Mikolajewicz et al., 2024 | This study | - |
-| Abdelfattah et al., 2022 | - | GBM |
-| Wang et al., 2022 | - | GBM |
+| Mikolajewicz et al., 2025 | This study | - |
+| Abdelfattah et al., 2022 | GSE182109 | Nature Communications |
+| Wang et al., 2021 | GSE131928 | Genome Biology |
 
 ## Workflow Overview
 
@@ -164,23 +164,6 @@ Input data consists of preprocessed Seurat objects containing oligodendrocyte ce
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Output Files
-
-| File | Description |
-|------|-------------|
-| `TableS5_OL_metaprograms.csv` | Gene lists for each oligodendrocyte metaprogram |
-| `seurat_oligo_integrated.rds` | Integrated Seurat object (before module scoring) |
-| `seurat_oligo_atlas_final.rds` | Final Seurat object with module scores |
-| `oligo_nmf_programs.rds` | R list object of gene programs |
-| `nmf_results_per_sample.rds` | Per-sample NMF results (for reproducibility) |
-| `nmf_results_final.rds` | Final NMF results including Jaccard matrices |
-| `cell2sample_mapping.rds` | Cell barcode to sample name mapping |
-| `umap_by_type.pdf` | UMAP colored by condition |
-| `umap_by_study.pdf` | UMAP colored by study |
-| `umap_module_scores.pdf` | UMAP colored by all module scores |
-| `program_jaccard_heatmap.pdf` | Program similarity heatmap |
-| `program_correlations.pdf` | Program correlation heatmap |
-
 ## Identified Gene Programs
 
 The analysis identifies 8 oligodendrocyte transcriptional programs:
@@ -195,37 +178,6 @@ The analysis identifies 8 oligodendrocyte transcriptional programs:
 | O6-Myelin | Myelination | PLP1, MBP | Mature myelinating OLs |
 | O7-Stress | Stress response | FOS, UBC | Heat shock, immediate early genes |
 | O8-Neuro-II | Neuronal-like II | SNAP25, NRG3 | Synapse-associated |
-
-## Troubleshooting
-
-### BBKNN Installation Issues
-
-If BBKNN is not available, the script automatically falls back to Harmony:
-
-```r
-# Check if BBKNN is available
-reticulate::py_module_available("bbknn")
-
-# Install BBKNN in Python
-system("pip install bbknn scanpy")
-```
-
-### Memory Issues
-
-For large datasets, use conservative memory settings:
-
-```r
-options(future.globals.maxSize = 8000 * 1024^2)  # 8 GB
-gc()
-```
-
-### Parallelization
-
-Adjust number of cores based on your system:
-
-```r
-config$n_cores <- parallel::detectCores() - 2
-```
 
 ## Contact
 
