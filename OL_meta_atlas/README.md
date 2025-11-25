@@ -2,7 +2,7 @@
 
 ## Overview
 
-This repository contains the R code for generating an oligodendrocyte meta-atlas by integrating single-cell/nucleus RNA sequencing data from multiple studies spanning healthy brain, neurological diseases, and brain tumors. The analysis identifies robust transcriptional programs (metaprograms) using Non-negative Matrix Factorization (NMF).
+This folder contains the R code for generating an oligodendrocyte meta-atlas by integrating single-cell/nucleus RNA sequencing data from multiple studies spanning healthy brain, neurological diseases, and brain tumors. The analysis identifies robust transcriptional programs (metaprograms) using Non-negative Matrix Factorization (NMF).
 
 ## Repository Structure
 
@@ -64,6 +64,19 @@ pip install bbknn scanpy numpy
 reticulate::use_condaenv("bbknn")
 ```
 
+### Quick Start
+
+```r
+source("OL_meta_atlas_analysis.R")
+
+# Edit config paths
+config$external_data_dir <- "your/data/path/"
+config$output_dir <- "your/output/path/"
+
+# Run
+results <- main()
+```
+
 ## Data Availability
 
 Input data consists of preprocessed Seurat objects containing oligodendrocyte cells extracted from the following studies:
@@ -121,63 +134,48 @@ Input data consists of preprocessed Seurat objects containing oligodendrocyte ce
 ┌─────────────────────────────────────────────────────────────┐
 │                  PREPROCESSING PHASE                        │
 ├─────────────────────────────────────────────────────────────┤
-│  1. Load raw data from each study (23 studies)             │
-│  2. QC filtering (mito < 10%, 200 < genes < 9000)         │
-│  3. Identify oligodendrocyte populations                   │
-│  4. SCTransform normalization per sample                   │
-│  5. Save preprocessed Seurat objects                       │
+│  1. Load raw data from each study (23 studies)              │
+│  2. QC filtering (mito < 10%, 200 < genes < 9000)           │
+│  3. Identify oligodendrocyte populations                    │
+│  4. SCTransform normalization per sample                    │
+│  5. Save preprocessed Seurat objects                        │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                   INTEGRATION PHASE                         │
 ├─────────────────────────────────────────────────────────────┤
-│  6. Merge all samples into single object                   │
-│  7. Standard normalization on merged data                  │
-│  8. PCA dimensionality reduction                           │
-│  9. BBKNN batch correction (Python via reticulate)         │
-│  10. UMAP visualization                                    │
-│  11. SCTransform for NMF input                             │
+│  6. Merge all samples into single object                    │
+│  7. Standard normalization on merged data                   │
+│  8. PCA dimensionality reduction                            │
+│  9. BBKNN batch correction (Python via reticulate)          │
+│  10. UMAP visualization                                     │
+│  11. SCTransform for NMF input                              │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                     NMF PHASE                               │
 ├─────────────────────────────────────────────────────────────┤
-│  12. Per-sample NMF (k = 2-15, parallel processing)        │
-│  13. Extract top 50 genes per NMF component                │
-│  14. Within-sample robustness (Jaccard > 0.7)              │
-│  15. Cross-sample robustness (≥3 samples)                  │
-│  16. Hierarchical clustering of robust programs            │
-│  17. Gene prevalence filtering (> 0.3)                     │
-│  18. Final 8 metaprograms defined                          │
+│  12. Per-sample NMF (k = 2-15, parallel processing)         │
+│  13. Extract top 50 genes per NMF component                 │
+│  14. Within-sample robustness (Jaccard > 0.7)               │
+│  15. Cross-sample robustness (≥3 samples)                   │
+│  16. Hierarchical clustering of robust programs             │
+│  17. Gene prevalence filtering (> 0.3)                      │
+│  18. Final 8 metaprograms defined                           │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    OUTPUT PHASE                             │
 ├─────────────────────────────────────────────────────────────┤
-│  19. Module scoring for all cells                          │
-│  20. Export Table S5 (gene programs)                       │
-│  21. Generate visualizations                               │
-│  22. Save final Seurat object                              │
+│  19. Module scoring for all cells                           │
+│  20. Export Table S5 (gene programs)                        │
+│  21. Generate visualizations                                │
+│  22. Save final Seurat object                               │
 └─────────────────────────────────────────────────────────────┘
 ```
-
-## Identified Gene Programs
-
-The analysis identifies 8 oligodendrocyte transcriptional programs:
-
-| Program | Annotation | Key Markers | Description |
-|---------|------------|-------------|-------------|
-| O1-Neuro-I | Neuronal-like | ACTN2, SLC5A11 | Neuronal-like signature |
-| O2-Reactive-I | Immune-reactive | CD74, S100A11 | Complement, phagocytosis |
-| O3-Cycling | Proliferation | TOP2A, NUF2 | Cell cycle, proliferation |
-| O4-OPC | OPC | PTPRZ1, SOX6 | Oligodendrocyte progenitors (PDGFRA+) |
-| O5-Reactive-II | Interferon | IFI6, B2M | Interferon-responsive |
-| O6-Myelin | Myelination | PLP1, MBP | Mature myelinating OLs |
-| O7-Stress | Stress response | FOS, UBC | Heat shock, immediate early genes |
-| O8-Neuro-II | Neuronal-like II | SNAP25, NRG3 | Synapse-associated |
 
 ## Contact
 
