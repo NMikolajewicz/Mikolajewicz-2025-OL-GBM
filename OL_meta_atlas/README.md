@@ -71,12 +71,12 @@ Input data consists of preprocessed Seurat objects containing oligodendrocyte ce
 ### Healthy Brain
 | Study | GEO/Source | Citation |
 |-------|-----------|----------|
-| Franjic et al., 2022 | GSE178265 | Science 2022 |
-| Habib et al., 2017 | GSE97930 | Nature Methods 2017 |
-| Kanton et al., 2019 | - | Nature 2019 |
+| Franjic et al., 2022 | GSE186538 | Neuron 2022 |
+| Habib et al., 2017 | - | Nature Methods 2017 |
+| Kanton et al., 2019 | E-MTAB-8230 | Nature 2019 |
 | Khrameeva et al., 2020 | GSE127774 | Genome Research 2020 |
 | Hodge et al., 2019 | Allen Brain Atlas | Nature 2019 |
-| Bakken et al., 2021 | - | Nature 2021 |
+| Bakken et al., 2021 | SCR_016152 | Nature 2021 |
 
 ### Multiple Sclerosis
 | Study | GEO/Source | Citation |
