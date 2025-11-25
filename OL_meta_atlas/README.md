@@ -4,15 +4,10 @@
 
 This repository contains the R code for generating an oligodendrocyte meta-atlas by integrating single-cell/nucleus RNA sequencing data from multiple studies spanning healthy brain, neurological diseases, and brain tumors. The analysis identifies robust transcriptional programs (metaprograms) using Non-negative Matrix Factorization (NMF).
 
-## Associated Publication
-
-Mikolajewicz N, et al. *[Manuscript Title]*
-
 ## Repository Structure
 
 ```
 ├── OL_meta_atlas_analysis.Rmd          # Main R Notebook (integration + NMF)
-├── OL_preprocessing_individual_studies.R # Preprocessing for each study
 ├── README.md                            # This file
 ```
 
@@ -120,46 +115,6 @@ Input data consists of preprocessed Seurat objects containing oligodendrocyte ce
 | Abdelfattah et al., 2022 | - | GBM |
 | Wang et al., 2022 | - | GBM |
 
-## Usage
-
-### Step 1: Preprocessing Individual Studies
-
-First, run the preprocessing script to extract oligodendrocytes from each study:
-
-```r
-# Set your data directory
-base_dir <- "path/to/raw_data/"
-
-# Source the preprocessing functions
-source("OL_preprocessing_individual_studies.R")
-
-# Process all studies
-all_samples <- process_all_studies(base_dir, reprocess = TRUE)
-```
-
-### Step 2: Run Main Analysis
-
-Open the R Notebook and run all chunks:
-
-```r
-# In RStudio
-rmarkdown::render("OL_meta_atlas_analysis.Rmd")
-```
-
-Or run section by section interactively.
-
-### Step 3: Configure Paths
-
-Edit the `config` list in the notebook:
-
-```r
-config <- list(
-  data_dir = "path/to/preprocessed_data/",
-  output_dir = "path/to/output/",
-  # ... other parameters
-)
-```
-
 ## Workflow Overview
 
 ```
@@ -241,23 +196,6 @@ The analysis identifies 8 oligodendrocyte transcriptional programs:
 | O7-Stress | Stress response | FOS, UBC | Heat shock, immediate early genes |
 | O8-Neuro-II | Neuronal-like II | SNAP25, NRG3 | Synapse-associated |
 
-## Key Parameters
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `min_cells_per_sample` | 50 | Minimum cells to retain a sample |
-| `mito_threshold` | 10% | Maximum mitochondrial content |
-| `min_features` | 200 | Minimum genes per cell |
-| `max_features` | 9000 | Maximum genes per cell |
-| `n_variable_features` | 2000 | Variable features for SCT |
-| `nmf_k_range` | 2-15 | Range of k values for NMF |
-| `top_n_genes` | 50 | Top genes per NMF component |
-| `intra_threshold` | 0.7 | Within-sample Jaccard threshold |
-| `inter_threshold` | 0.2 | Between-sample Jaccard threshold |
-| `min_samples_robust` | 3 | Min samples for cross-sample robustness |
-| `prevalence_threshold` | 0.3 | Gene prevalence for final programs |
-| `n_final_programs` | 8 | Number of final gene programs |
-
 ## Troubleshooting
 
 ### BBKNN Installation Issues
@@ -289,18 +227,7 @@ Adjust number of cores based on your system:
 config$n_cores <- parallel::detectCores() - 2
 ```
 
-## Citation
-
-If you use this code or data, please cite:
-
-```
-[Citation information to be added upon publication]
-```
-
 ## Contact
 
-For questions about the analysis, please contact [corresponding author email].
+For questions about the analysis, please contact [n.mikolajewicz@utoronto.ca].
 
-## License
-
-[License information]
