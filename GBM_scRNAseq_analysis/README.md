@@ -1,4 +1,4 @@
-# Mikolajewicz-2025-OL-GBM
+# GBM scRNA-seq analyses
 
 [![DOI](https://img.shields.io/badge/DOI-10.6084/m9.figshare.25917628-blue)](https://figshare.com/articles/dataset/snRNA-seq_Primary-Recurrent_GBM_Mikolajewicz_Cohort_/25917628)
 
