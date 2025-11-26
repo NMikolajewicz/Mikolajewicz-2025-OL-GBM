@@ -1,0 +1,222 @@
+# =============================================================================
+# Configuration file for reproducible analysis pipeline
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Global Settings
+# -----------------------------------------------------------------------------
+project:
+  name: "OL-GBM-2025"
+  version: "1.0.0"
+  seed: 123
+  n_cores: 4  # Adjust based on available resources
+
+# -----------------------------------------------------------------------------
+# Directory Paths (relative to project root)
+# -----------------------------------------------------------------------------
+paths:
+  data_raw: "data/raw"
+  data_processed: "data/processed"
+  results_figures: "results/figures"
+  results_tables: "results/tables"
+  cache_dir: ".cache"
+
+# -----------------------------------------------------------------------------
+# QC Filtering Parameters 
+# -----------------------------------------------------------------------------
+qc:
+  min_genes_per_cell: 200
+  max_genes_per_cell: 9000
+  max_mito_percent: 60
+  unmatched_rate_mad_threshold: 3  # 3 MAD from median
+  min_cells_per_sample: 200  # k.filter parameter
+
+# -----------------------------------------------------------------------------
+# Normalization Parameters
+# -----------------------------------------------------------------------------
+normalization:
+  method: "sctransform"
+  sct_method: "glmGamPoi"
+  sct_vst_flavor: "v2"
+  n_variable_features: 3000
+  vars_to_regress: ["percent.mt"]  # if mito % available
+
+# -----------------------------------------------------------------------------
+# Dimensionality Reduction Parameters
+# -----------------------------------------------------------------------------
+dim_reduction:
+  # PCA
+  pca_variance_threshold: 0.9  # Use PCs explaining 90% variance
+  
+  # UMAP (from manuscript methods)
+  umap_n_neighbors: 50
+  umap_min_dist: 0.1
+  umap_metric: "cosine"
+  umap_max_components: 2
+
+# -----------------------------------------------------------------------------
+# Integration Parameters
+# -----------------------------------------------------------------------------
+integration:
+  method: "rPCA"  # reciprocal PCA
+  k_filter: 200
+  k_anchor: 5
+  k_weight: 100
+  n_integration_genes: 3000
+  # BBKNN fallback parameters
+  bbknn_neighbors_within_batch: 3
+  bbknn_n_pcs: 50
+
+# -----------------------------------------------------------------------------
+# Clustering Parameters
+# -----------------------------------------------------------------------------
+clustering:
+  resolution: 0.35
+  algorithm: "louvain"
+  fine_grain_resolution: 3  # For over-clustering approach
+
+# -----------------------------------------------------------------------------
+# Tumor Classification Parameters (PCA-based CNV)
+# -----------------------------------------------------------------------------
+cnv_analysis:
+  # From manuscript: PCA-based CNV workflow
+  window_size: 150
+  clip_quantile_lower: 0.0001
+  clip_quantile_upper: 0.9999
+  correlation_threshold: 0.2  # For tumor cell identification
+  # Chromosome arms to exclude
+  exclude_chromosomes: ["Y"]
+  # HLA genes exclusion (Yuan 2018 approach)
+  exclude_hla_genes: true
+  
+  # Reference cell type for baseline correction
+  reference_cell_type: "microglia"
+  reference_marker: "P2RY12"
+
+# -----------------------------------------------------------------------------
+# GBM Tumor Markers
+# -----------------------------------------------------------------------------
+tumor_markers:
+  gsc_markers: ["PROM1", "PTPRZ1", "NOVA1", "SOX2", "POU3F3", "CLU", "NES", "VEGFA", "EGFR", "CD44", "PDGFRA"]
+  
+# -----------------------------------------------------------------------------
+# Cell Type Markers
+# -----------------------------------------------------------------------------
+cell_type_markers:
+  oligodendrocyte:
+    general: ["OLIG1", "OLIG2"]
+    opc: ["PDGFRA", "PTPRZ1", "SOX6"]
+    mature: ["MOBP", "MAG", "MOG", "PLP1", "MBP"]
+  microglia: ["P2RY12", "CX3CR1", "CD163"]
+  astrocyte: ["AGT", "ALDH1L1", "GFAP"]
+  endothelial: ["CD34", "CDH5"]
+  t_cell: ["CD3D", "CD3G", "CD3E"]
+  b_cell: ["CD27", "CD19"]
+  neuron: ["RBFOX3", "CELF4"]
+  pericyte: ["COL1A1", "COL3A1"]
+  myeloid: ["LYZ", "CD14"]
+
+# -----------------------------------------------------------------------------
+# Differential Expression Parameters
+# -----------------------------------------------------------------------------
+deg_analysis:
+  method: "wilcoxauc"  # presto package
+  min_pct: 0.1
+  logfc_threshold: 0.25
+  fdr_threshold: 0.05
+  
+  # CDI markers (co-dependency index)
+  cdi_enabled: true
+
+# -----------------------------------------------------------------------------
+# Ligand-Receptor Analysis Parameters
+# -----------------------------------------------------------------------------
+lr_analysis:
+  databases: ["SCSR", "iTALK", "Fantom5", "NATMI"]
+  prevalence_threshold: 0  # P_LR > 0 for active interactions
+  significance_test: "wilcoxon"
+  fdr_threshold: 0.1
+
+# -----------------------------------------------------------------------------
+# NMF Gene Program Parameters (OL Meta-atlas)
+# -----------------------------------------------------------------------------
+nmf:
+  rank_range: [2, 15]
+  loss_function: "mse"
+  rel_tolerance: 0.0001
+  max_iterations: 50
+  n_top_genes: 50
+  
+  # Jaccard similarity thresholds
+  intra_sample_threshold: 0.7
+  intra_sample_min_ranks: 2
+  inter_sample_threshold: 0.2
+  inter_sample_min_samples: 2
+  consensus_gene_threshold: 0.3  # 30% representation
+
+# -----------------------------------------------------------------------------
+# Abundance Analysis Parameters
+# -----------------------------------------------------------------------------
+abundance:
+  # NNLS deconvolution for bulk RNA-seq
+  nnls_enabled: true
+  min_expression_fraction: 0.005  # 0.5% cells
+
+# -----------------------------------------------------------------------------
+# Statistical Parameters
+# -----------------------------------------------------------------------------
+statistics:
+  test_method: "wilcoxon"
+  paired_test: true  # For matched pGBM/rGBM samples
+  fdr_method: "BH"  # Benjamini-Hochberg
+  significance_levels:
+    star1: 0.05
+    star2: 0.01
+    star3: 0.001
+
+# -----------------------------------------------------------------------------
+# Visualization Parameters
+# -----------------------------------------------------------------------------
+visualization:
+  point_size_auto: true
+  color_palette: "ptol"
+  dpi: 300
+  figure_format: ["png", "pdf"]
+  umap_raster: true
+
+# -----------------------------------------------------------------------------
+# Sample Metadata (Mikolajewicz cohort)
+# -----------------------------------------------------------------------------
+sample_metadata:
+  rename_barcodes:
+    P1: "p9_01_GBM_63P"
+    R1: "p9_02_GBM_173R"
+    P2: "p9_05_GBM_162P"
+    R2: "p9_06_GBM_265R"
+    P3: "p14_37_MBT240_P4"
+    R3: "p14_38_MBT298_R4"
+    P4: "p16_1_03_Z1-1P"
+    R4: "p16_1_04_Z1-2R"
+    P5: "p16_1_05_Z2-1P"
+    R5: "p16_1_06_Z2-2R"
+    P6: "p16_2_16_Z4-1Pm"
+    R6: "p16_2_17_Z4-2Rm"
+    P7: "p16_2_20_Z6-1Pm"
+    R7: "p16_2_21_Z6-2Rm"
+    P8: "p16_2_18_Z5-1Pm"
+    R9: "p9_03_GBM_190P"
+    R10: "p16_1_08_Z3-2R"
+    R11: "p16_1_02_MBT289R"
+    
+  idh_status:
+    wildtype: ["P1", "R1", "P2", "R2", "P3", "R3", "P4", "R4", "P5", "R5", "R9", "R10", "R11"]
+    mutant: ["P6", "R6", "P7", "R7", "P8"]
+    
+  matched_pairs:
+    pair1: ["P1", "R1"]
+    pair2: ["P2", "R2"]
+    pair3: ["P3", "R3"]
+    pair4: ["P4", "R4"]
+    pair5: ["P5", "R5"]
+    pair6: ["P6", "R6"]
+    pair7: ["P7", "R7"]
