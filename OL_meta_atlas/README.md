@@ -1,5 +1,7 @@
 # Oligodendrocyte Meta-Atlas Analysis
 
+[![DOI](https://img.shields.io/badge/DOI-10.6084/m9.figshare.30702419-blue)]([https://doi.org/](https://figshare.com/articles/dataset/scRNA-seq_Oligodendrocyte-Lineage_Meta-Atlas/30702419?file=59816630))
+
 ## Overview
 
 This folder contains the R code for generating an oligodendrocyte meta-atlas by integrating single-cell/nucleus RNA sequencing data from multiple studies spanning healthy brain, neurological diseases, and brain tumors. The analysis identifies robust transcriptional programs (metaprograms) using Non-negative Matrix Factorization (NMF).
