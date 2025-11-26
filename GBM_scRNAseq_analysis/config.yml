@@ -1,0 +1,333 @@
+# ==============================================================================
+# Mikolajewicz et al. 2025 - OL-GBM Analysis Configuration
+# ==============================================================================
+# This configuration file centralizes all parameters, paths, and settings
+# for reproducible GBM scRNA-seq analysis.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Paths
+# ------------------------------------------------------------------------------
+paths:
+  # Input data directories
+  data_dir: "data/"
+  raw_data_dir: "data/raw/"
+  processed_data_dir: "data/processed/"
+  
+  # Output directories
+  results_dir: "results/"
+  figures_dir: "results/figures/"
+  tables_dir: "results/tables/"
+  
+  # Reference files
+  gene_sets_dir: "data/reference/gene_sets/"
+  lr_database_dir: "data/reference/lr_databases/"
+
+# ------------------------------------------------------------------------------
+# Reproducibility
+# ------------------------------------------------------------------------------
+reproducibility:
+  seed: 123
+  rng_kind: "Mersenne-Twister"
+
+# ------------------------------------------------------------------------------
+# QC Parameters (from manuscript and PR scripts)
+# ------------------------------------------------------------------------------
+qc:
+  # Gene count thresholds
+  min_genes: 200
+  max_genes: 9000
+  
+  # Mitochondrial content
+  max_mito_percent: 60
+  
+  # MAD-based filtering for doublet detection
+  mad_threshold: 3
+  
+  # Minimum cells expressing a gene
+
+  min_cells_per_gene: 3
+  
+  # Expression thresholds for CNV filtering
+  min_expression_fraction: 0.05
+
+# ------------------------------------------------------------------------------
+# Normalization Parameters
+# ------------------------------------------------------------------------------
+normalization:
+  method: "sctransform"  # Options: sctransform, lognorm
+  sctransform:
+    vst_flavor: "v2"
+    method: "glmGamPoi"
+    variable_features_n: 3000
+    vars_to_regress:
+      - "percent.mt"
+    conserve_memory: false
+
+# ------------------------------------------------------------------------------
+# Dimensionality Reduction
+# ------------------------------------------------------------------------------
+dim_reduction:
+  pca:
+    npcs: 50
+    variance_threshold: 0.90  # Use PCs explaining 90% variance
+  
+  umap:
+    n_neighbors: 50
+    min_dist: 0.1
+    metric: "cosine"
+    max_components: 2
+
+# ------------------------------------------------------------------------------
+# Integration Parameters
+# ------------------------------------------------------------------------------
+integration:
+  method: "rPCA"  # Options: CCA, rPCA
+  n_features: 2000
+  k_filter: 200
+  k_anchor: 5
+  k_weight: 100
+  
+  # BBKNN integration (for meta-atlas)
+  bbknn:
+    neighbors_within_batch: 3
+    n_pcs: 30
+
+# ------------------------------------------------------------------------------
+# Clustering Parameters
+# ------------------------------------------------------------------------------
+clustering:
+  algorithm: "louvain"  # Options: louvain, leiden
+  resolution:
+    coarse: 0.35
+    fine: 0.5
+    overclustering: 3.0  # For tumor/normal resolution
+  k_neighbors: 20
+
+# ------------------------------------------------------------------------------
+# CNV Analysis Parameters (from PR1)
+# ------------------------------------------------------------------------------
+cnv:
+  # Window size for rolling average
+  window_size: 150
+  
+  # Clipping thresholds
+  clip_threshold: 0.0001  # Quantile clipping
+  
+  # Expression threshold
+  expression_threshold: 3
+  
+  # Reference cells (microglia clusters from PR1)
+  reference_clusters:
+    - 3
+    - 5
+    - 16
+    - 13
+    - 15
+  
+  # Jaccard similarity threshold for chromosome arm co-occurrence
+  jaccard_threshold: 0.4
+  
+  # Aneuploidy probability threshold
+  aneuploidy_prob_threshold: 0.95
+  
+  # Posterior probability threshold for tumor calling
+  posterior_prob_threshold: 0.5
+
+# ------------------------------------------------------------------------------
+# Tumor Markers (from PR1 manuscript)
+# ------------------------------------------------------------------------------
+tumor_markers:
+  gsc_markers:
+    - "PROM1"
+    - "PTPRZ1"
+    - "SOX2"
+    - "NOVA1"
+    - "NES"
+    - "EGFR"
+    - "CD44"
+    - "CLU"
+    - "POU3F3"
+    - "VEGFA"
+    - "PDGFRA"
+
+# ------------------------------------------------------------------------------
+# Cell Type Markers (from PR1/PR2)
+# ------------------------------------------------------------------------------
+cell_type_markers:
+  endothelial:
+    - "CD34"
+    - "CDH5"
+  astrocyte:
+    - "AGT"
+    - "ALDH1L1"
+    - "GFAP"
+  oligodendrocyte:
+    - "PLP1"
+    - "MOG"
+    - "OLIG1"
+    - "OLIG2"
+    - "MOBP"
+    - "MAG"
+  opc:
+    - "PDGFRA"
+    - "PTPRZ1"
+    - "SOX6"
+  microglia:
+    - "P2RY12"
+    - "CD163"
+    - "LYZ"
+  tcell:
+    - "CD3D"
+    - "CD3E"
+    - "CD3G"
+  bcell:
+    - "CD27"
+    - "CD19"
+  neuron:
+    - "RBFOX3"
+    - "CELF4"
+  pericyte:
+    - "COL1A1"
+    - "COL3A1"
+  cycling:
+    - "TOP2A"
+    - "KIF2C"
+    - "MKI67"
+
+# ------------------------------------------------------------------------------
+# Differential Expression Parameters
+# ------------------------------------------------------------------------------
+differential_expression:
+  # Wilcoxon test parameters (presto)
+  min_pct: 0.1
+  logfc_threshold: 0.25
+  
+  # FDR correction
+  fdr_method: "BH"
+  fdr_threshold: 0.05
+  
+  # Top markers per cluster
+  n_top_markers: 20
+
+# ------------------------------------------------------------------------------
+# NMF Parameters (for metaprogram discovery - from manuscript)
+# ------------------------------------------------------------------------------
+nmf:
+  # Rank range
+  rank_min: 2
+  rank_max: 15
+  
+  # NMF parameters
+  loss: "mse"
+  rel_tol: 0.0001
+  max_iter: 50
+  
+  # Top genes per program
+  n_top_genes: 50
+  
+  # Jaccard thresholds for program filtering
+  jaccard:
+    intra_sample_threshold: 0.7  # Within-sample reproducibility
+    intra_sample_min_ranks: 2    # Minimum ranks with similarity
+    inter_sample_threshold: 0.2  # Between-sample reproducibility
+    inter_sample_min_samples: 2  # Minimum samples with similarity
+  
+  # Consensus program threshold
+  consensus_gene_fraction: 0.3  # Genes in 30% of component programs
+
+# ------------------------------------------------------------------------------
+# Ligand-Receptor Analysis Parameters
+# ------------------------------------------------------------------------------
+lr_analysis:
+  # LR databases to use
+  databases:
+    - "SCSR"
+    - "iTALK"
+    - "Fantom5"
+    - "NATMI"
+  
+  # Significance testing
+  significance_test: "wilcoxon"
+  p_threshold: 0.05
+
+# ------------------------------------------------------------------------------
+# Module Scoring Parameters
+# ------------------------------------------------------------------------------
+module_scoring:
+  # Number of control genes
+  n_ctrl: 100
+  
+  # Scale scores
+  scale: true
+
+# ------------------------------------------------------------------------------
+# Visualization Parameters
+# ------------------------------------------------------------------------------
+visualization:
+  # Figure dimensions
+  fig_width: 7
+  fig_height: 5
+  
+  # DPI for raster plots
+  dpi: 300
+  
+  # Point sizes
+  pt_size: 0.5
+  pt_size_small: 0.1
+  
+  # Color palettes
+  color_palette: "viridis"
+  diverging_palette: "RdBu"
+
+# ------------------------------------------------------------------------------
+# Sample Metadata (from PR1)
+# ------------------------------------------------------------------------------
+sample_metadata:
+  rename_barcode:
+    P1: "p9_01_GBM_63P"
+    R1: "p9_02_GBM_173R"
+    P2: "p9_05_GBM_162P"
+    R2: "p9_06_GBM_265R"
+    P3: "p14_37_MBT240_P4"
+    R3: "p14_38_MBT298_R4"
+    P4: "p16_1_03_Z1-1P"
+    R4: "p16_1_04_Z1-2R"
+    P5: "p16_1_05_Z2-1P"
+    R5: "p16_1_06_Z2-2R"
+    P6: "p16_2_16_Z4-1Pm"
+    R6: "p16_2_17_Z4-2Rm"
+    P7: "p16_2_20_Z6-1Pm"
+    R7: "p16_2_21_Z6-2Rm"
+    P8: "p16_2_18_Z5-1Pm"
+    R9: "p9_03_GBM_190P"
+    R10: "p16_1_08_Z3-2R"
+    R11: "p16_1_02_MBT289R"
+  
+  idh_status:
+    P1: "wt"
+    R1: "wt"
+    P2: "wt"
+    R2: "wt"
+    P3: "wt"
+    R3: "wt"
+    P4: "wt"
+    R4: "wt"
+    P5: "wt"
+    R5: "wt"
+    P6: "mutant"
+    R6: "mutant"
+    P7: "mutant"
+    R7: "mutant"
+    P8: "mutant"
+    R9: "wt"
+    R10: "wt"
+    R11: "wt"
+
+# ------------------------------------------------------------------------------
+# Compute Resources
+# ------------------------------------------------------------------------------
+compute:
+  n_cores: 8
+  max_memory_gb: 100
+  future_globals_maxsize: 8000  # MB
