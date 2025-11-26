@@ -1,6 +1,6 @@
 # Oligodendrocyte Meta-Atlas Analysis
 
-[![DOI](https://img.shields.io/badge/DOI-10.6084/m9.figshare.30702419-blue)]([https://doi.org/](https://figshare.com/articles/dataset/scRNA-seq_Oligodendrocyte-Lineage_Meta-Atlas/30702419?file=59816630))
+[![DOI](https://img.shields.io/badge/DOI-10.6084/m9.figshare.30702419-blue)](https://figshare.com/articles/dataset/scRNA-seq_Oligodendrocyte-Lineage_Meta-Atlas/30702419?file=59816630)
 
 ## Overview
 
